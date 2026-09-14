@@ -411,3 +411,5 @@ kButton.onclick=()=>{document.getElementById('kPrefix').value=state.kksSettings.
 const oldGen=generatorForm.onsubmit;generatorForm.onsubmit=e=>{state.defaultPipeSize=generatorLineSize.value.trim();oldGen(e);state.defaultPipeSize=''};const oldCloud=cloudLoadProject;cloudLoadProject=async user=>{await oldCloud(user);if(!projectId)return;const d=await cloud.from('projects').select('diagram').eq('id',projectId).single();if(d.data?.diagram?.kksSettings)state.kksSettings={...state.kksSettings,...d.data.diagram.kksSettings};render()};
 })();
 </script>
+
+<script>document.querySelectorAll('header button').forEach(b=>{if(!b.id&&['KKS / Excel','Check drawing'].includes(b.textContent.trim()))b.remove();});</script>
