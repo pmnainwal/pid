@@ -413,3 +413,5 @@ const oldGen=generatorForm.onsubmit;generatorForm.onsubmit=e=>{state.defaultPipe
 </script>
 
 <script>document.querySelectorAll('header button').forEach(b=>{if(!b.id&&['KKS / Excel','Check drawing'].includes(b.textContent.trim()))b.remove();});</script>
+<script>(()=>{const b=document.getElementById("checkBtn"),m=document.getElementById("checkBackdrop"),r=document.getElementById("checkResult");if(!b||!m||!r)return;b.addEventListener("click",()=>{const n=Number((document.getElementById("counts")?.textContent.match(/^(\d+) symbols/)||[,"0"])[1]);if(n===0){r.className="check-status bad";r.innerHTML="<strong>Needs modification</strong><br>The drawing has no equipment, valve, or instrument symbols.";m.hidden=false;}});})();</script>
+</script>
