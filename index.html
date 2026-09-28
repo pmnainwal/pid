@@ -520,3 +520,101 @@ main>aside:first-child .tools{gap:4px!important;margin-bottom:12px!important}mai
 </script>
 
 <script id="pidRemoveDrawingDataDock">(()=>document.getElementById('pidDataDock')?.remove())();</script>
+
+
+<style id="pidPasswordRecoveryStyle">
+  #authForgot { display:block; margin:10px auto 0; padding:3px 0; border:0; background:transparent; color:#1769aa; font-size:12px; text-decoration:underline; }
+  #authForgot:hover { color:#075a93; }
+  #pidPasswordReset { width:min(420px,100%); background:#fff; border-radius:8px; padding:26px; box-shadow:0 18px 45px rgba(0,0,0,.2); }
+  #pidPasswordReset[hidden] { display:none!important; }
+  #pidPasswordReset h2 { color:#16212b; font-size:20px; letter-spacing:0; text-transform:none; margin:0 0 5px; }
+  #pidPasswordReset p { color:#607080; margin-top:0; }
+</style>
+<script id="pidPasswordRecovery">
+(()=>{
+  if (document.getElementById('authForgot')) return;
+  const authForm=document.getElementById('authForm');
+  const authBackdrop=document.getElementById('authBackdrop');
+  const email=document.getElementById('authEmail');
+  const password=document.getElementById('authPassword');
+  const error=document.getElementById('authError');
+  const copy=document.getElementById('authCopy');
+  const pidCloud=typeof cloud!=='undefined'?cloud:null;
+  if(!authForm||!authBackdrop||!email||!error)return;
+  if(copy)copy.textContent='Your drawings and project details are securely saved to your account.';
+  if(password)password.placeholder='At least 8 characters';
+
+  const forgot=document.createElement('button');
+  forgot.id='authForgot';
+  forgot.type='button';
+  forgot.textContent='Forgot password?';
+  authForm.append(forgot);
+
+  const reset=document.createElement('form');
+  reset.id='pidPasswordReset';
+  reset.hidden=true;
+  reset.innerHTML='<h2>Set a new password</h2><p>Choose a new password for your P&ID Studio account.</p><label>New password<input id="pidNewPassword" type="password" required minlength="8" autocomplete="new-password" placeholder="At least 8 characters"></label><label>Confirm new password<input id="pidConfirmPassword" type="password" required minlength="8" autocomplete="new-password" placeholder="Repeat new password"></label><p id="pidResetError" class="auth-error"></p><div class="row"><button id="pidResetBack" type="button">Back to sign in</button><button id="pidResetSubmit" type="submit" class="primary">Save new password</button></div>';
+  authBackdrop.append(reset);
+
+  const appRedirect=window.location.origin+window.location.pathname;
+  const resetError=reset.querySelector('#pidResetError');
+  function showReset(){
+    authForm.hidden=true;
+    reset.hidden=false;
+    error.textContent='';
+    resetError.textContent='';
+  }
+  function showSignIn(){
+    reset.hidden=true;
+    authForm.hidden=false;
+    error.style.color='';
+    error.textContent='';
+  }
+  function setAuthMessage(message,success){
+    error.style.color=success?'#1769aa':'';
+    error.textContent=message;
+  }
+  forgot.onclick=async()=>{
+    const address=email.value.trim();
+    if(!address){setAuthMessage('Enter your account email first, then select Forgot password.');email.focus();return;}
+    if(!/^\S+@\S+\.\S+$/.test(address)){setAuthMessage('Enter a valid email address.');email.focus();return;}
+    if(!pidCloud){setAuthMessage('Online sign-in is not configured. Please contact the application owner.');return;}
+    forgot.disabled=true;
+    setAuthMessage('Sending password-reset email…',true);
+    try{
+      const {error:requestError}=await pidCloud.auth.resetPasswordForEmail(address,{redirectTo:appRedirect});
+      if(requestError)throw requestError;
+      setAuthMessage('If an account exists for this email, a reset link has been sent. Check Inbox and Spam.',true);
+    }catch(requestError){
+      setAuthMessage('Could not send the reset email: '+(requestError.message||'Please try again later.'));
+    }finally{forgot.disabled=false;}
+  };
+  reset.querySelector('#pidResetBack').onclick=showSignIn;
+  reset.onsubmit=async event=>{
+    event.preventDefault();
+    const newPassword=reset.querySelector('#pidNewPassword').value;
+    const confirmation=reset.querySelector('#pidConfirmPassword').value;
+    if(newPassword!==confirmation){resetError.textContent='The two passwords do not match.';return;}
+    if(!pidCloud){resetError.textContent='Online sign-in is not configured. Please contact the application owner.';return;}
+    const submit=reset.querySelector('#pidResetSubmit');
+    submit.disabled=true;
+    resetError.style.color='#1769aa';
+    resetError.textContent='Saving new password…';
+    try{
+      const {error:updateError}=await pidCloud.auth.updateUser({password:newPassword});
+      if(updateError)throw updateError;
+      resetError.textContent='Password updated. You can now sign in.';
+      setTimeout(async()=>{try{await pidCloud.auth.signOut();}catch(e){}showSignIn();},800);
+    }catch(updateError){
+      resetError.style.color='';
+      resetError.textContent='Could not save the new password: '+(updateError.message||'Request a new reset link and try again.');
+    }finally{submit.disabled=false;}
+  };
+  if(pidCloud){
+    pidCloud.auth.onAuthStateChange(event=>{if(event==='PASSWORD_RECOVERY')showReset();});
+    pidCloud.auth.getSession().then(({data})=>{
+      if(data&&data.session&&/type=recovery/i.test(window.location.hash+window.location.search))showReset();
+    }).catch(()=>{});
+  }
+})();
+</script>
