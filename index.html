@@ -617,4 +617,48 @@ main>aside:first-child .tools{gap:4px!important;margin-bottom:12px!important}mai
     }).catch(()=>{});
   }
 })();
+</script><style id="pidPlant3DStyles">
+#pidPlant3DPanel{position:fixed;inset:0;z-index:45;display:flex;align-items:center;justify-content:center;padding:18px;background:rgba(16,43,63,.72)}#pidPlant3DPanel[hidden]{display:none!important}#pidPlant3DPanel article{width:min(760px,100%);max-height:calc(100vh - 36px);overflow:auto;background:#fff;border-radius:10px;padding:24px;box-shadow:0 18px 45px rgba(0,0,0,.28)}#pidPlant3DPanel h2{font-size:20px;letter-spacing:0;text-transform:none;color:#16212b;margin:0 0 5px}#pidPlant3DPanel p{color:#607080;margin:0 0 12px}#pidPlant3DPanel h3{margin:18px 0 7px;color:#365269;font-size:12px;text-transform:uppercase;letter-spacing:.07em}#pidPlant3DPanel ol{padding-left:21px;color:#344b5d;margin:7px 0 12px}#pidPlant3DPanel li{margin:6px 0}#pidPlant3DPanel table{width:100%;border-collapse:collapse;font-size:12px}#pidPlant3DPanel th,#pidPlant3DPanel td{border:1px solid #dbe3e9;padding:7px;text-align:left;vertical-align:top}#pidPlant3DPanel th{background:#eef5f9;color:#16212b}#pidPlant3DPanel .pidPlantWarning{border-left:3px solid #ec8e2f;background:#fff8ef;padding:9px;font-size:12px;color:#5e4a30}
+</style>
+<script id="pidPlant3DExchange">
+(()=>{
+  if(document.getElementById('pidPlant3DPanel'))return;
+  const excluded=new Set(['annotation','flowDirection','rectangle','square','circle','ellipse','straightLine','star','triangle','diamond']);
+  const panel=document.createElement('section');
+  panel.id='pidPlant3DPanel';
+  panel.hidden=true;
+  panel.setAttribute('aria-label','Plant 3D exchange');
+  panel.innerHTML='<article><h2>Plant 3D exchange</h2><p>Prepare this P&amp;ID for an Autodesk Plant 3D project using a 2D DXF reference and a component / line data CSV.</p><div class="row"><button id="pidPlantExport" type="button" class="primary">Download Plant 3D CSV</button><button id="pidPlantDxf" type="button">Open DXF export</button><button id="pidPlantInfo" type="button">Plant 3D information</button></div><h3>Recommended handoff</h3><ol><li>Complete tags, KKS, pipe size, schedule, service, flow, and pressure in the drawing.</li><li>Download the CSV here and the basic DXF drawing.</li><li>In Plant 3D, set up the approved project, spec, catalogs, and line-number rules.</li><li>Use the DXF as a reference; map the CSV fields to Plant 3D equipment, valves, instruments, and line lists.</li></ol><h3>Export mapping</h3><table><thead><tr><th>P&amp;ID data</th><th>Plant 3D use</th></tr></thead><tbody><tr><td>Tag / KKS / description</td><td>Equipment, valve, or instrument properties</td></tr><tr><td>Pipe size, schedule, service, flow, pressure</td><td>Line list and plant spec review</td></tr><tr><td>From / To tags and line style</td><td>Connectivity reference for 3D routing</td></tr></tbody></table><p class="pidPlantWarning">This is an exchange template, not a native Plant 3D project. A qualified designer must choose catalog items, pipe specs, routing, supports, materials, and validate the model before construction.</p><div class="row"><button id="pidPlantClose" type="button">Close</button></div></article>';
+  document.body.append(panel);
+  const menu=document.getElementById('pidCadMenu');
+  const trigger=document.createElement('button');
+  trigger.id='pidPlant3DTool';
+  trigger.type='button';
+  trigger.textContent='Plant 3D';
+  trigger.title='Plant 3D exchange';
+  if(menu)menu.append(trigger);else document.querySelector('header')?.append(trigger);
+  const open=()=>panel.hidden=false;
+  trigger.onclick=open;
+  const clean=v=>String(v??'').replace(/[\r\n]+/g,' ').trim();
+  const quote=v=>'"'+clean(v).replace(/"/g,'""')+'"';
+  const target=n=>state.nodes.find(x=>x.id===n)?.tag||state.nodes.find(x=>x.id===n)?.label||'';
+  const mapping=n=>{const shape=definition(n.type).shape||n.type;if(['pump'].includes(shape))return 'Pump';if(['compressor'].includes(shape))return /fan|blower/i.test(n.label||'')?'Fan / blower':'Compressor';if(['tank'].includes(shape))return 'Vessel / tank';if(['heatExchanger','cooler'].includes(shape))return 'Heat exchanger';if(['valve','globeValve','ballValve','butterflyValve','checkValve','needleValve','plugValve','controlValve','safetyValve'].includes(shape))return 'Valve';if(['instrument','pressure','temperature','flow','level','analyzer','controller','alarm','marker'].includes(shape))return 'Instrument';if(['turbine'].includes(shape))return 'Turbine';if(['generator'].includes(shape))return 'Electrical equipment';return 'Process equipment';};
+  function exportCsv(){
+    const header=['RECORD_TYPE','PLANT3D_CLASS','PID_TAG','KKS','DESCRIPTION','TYPE','FROM_TAG','TO_TAG','PIPE_SIZE','SCHEDULE','SERVICE','FLOW','PRESSURE','LINE_STYLE','X','Y'];
+    const rows=[header];
+    state.nodes.filter(n=>!excluded.has(n.type)).forEach(n=>rows.push(['COMPONENT',mapping(n),n.tag||'',n.kks||'',n.label||'',n.type||'','','','','','','','',Math.round(n.x||0),Math.round(n.y||0)]));
+    state.pipes.forEach(p=>rows.push(['PIPE','Piping line','','','','',target(p.a),target(p.b),p.size||'',p.schedule||'',p.service||'',p.flow||'',p.pressure||'',p.style||'process','','']));
+    const csv=rows.map(row=>row.map(quote).join(',')).join('\r\n');
+    const link=document.createElement('a');
+    link.href=URL.createObjectURL(new Blob([csv],{type:'text/csv;charset=utf-8'}));
+    link.download='pid-plant3d-exchange.csv';
+    link.click();
+    setTimeout(()=>URL.revokeObjectURL(link.href),0);
+  }
+  document.getElementById('pidPlantExport').onclick=exportCsv;
+  document.getElementById('pidPlantDxf').onclick=()=>{panel.hidden=true;document.getElementById('checkBtn')?.click();};
+  document.getElementById('pidPlantInfo').onclick=()=>window.open('https://www.autodesk.com/products/autocad/included-with-autocad/plant-3d','_blank','noopener');
+  document.getElementById('pidPlantClose').onclick=()=>panel.hidden=true;
+  panel.addEventListener('click',event=>{if(event.target===panel)panel.hidden=true;});
+})();
 </script>
