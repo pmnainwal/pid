@@ -412,6 +412,105 @@ const oldGen=generatorForm.onsubmit;generatorForm.onsubmit=e=>{state.defaultPipe
 })();
 </script>
 
+<style id="pidPlant3DPaletteRefinement">
+  body.pid-palette-mode main{grid-template-columns:minmax(520px,1fr) 245px!important}
+  body.pid-palette-mode main>aside:first-child{display:none!important}
+  #pidPal{left:10px!important;top:112px!important;width:292px!important;height:min(650px,calc(100vh - 126px))!important;z-index:55!important}
+  #pidPal .pidTabs{overflow:auto}
+  #pidPal .pidTab{height:76px!important;min-height:76px!important}
+  #pidPal .pidPalBody{padding:41px 9px 12px!important}
+  #pidPal .pidGrid{grid-template-columns:repeat(4,1fr)!important}
+  #pidPal .pidTool{height:54px!important;min-height:54px!important}
+  #pidPal .pidPaletteGroup{padding-bottom:10px;margin-bottom:10px;border-bottom:1px solid #647489}
+  #pidPal .pidPaletteGroup h4{margin:0 0 6px;color:#dce8f2;font-size:10px;letter-spacing:.07em;text-transform:uppercase}
+  #pidPal .pidHomeGrid{display:grid;grid-template-columns:1fr 1fr;gap:6px}
+  #pidPal .pidHomeGrid button{min-height:32px;border:1px solid #718196;border-radius:4px;background:#46556a;color:#fff;font-size:10px;text-align:left;padding:5px}
+  #pidPal .pidHomeGrid button:hover{background:#1769aa}
+  #pidPal .pidProcessGrid{display:flex;flex-wrap:wrap;gap:5px}
+  #pidPal .pidProcessGrid button{border:1px solid #718196;border-radius:13px;background:#46556a;color:#fff;font-size:9px;padding:4px 6px}
+  #pidVisualPanel,#pidValidatePanel{position:fixed;z-index:70;top:107px;right:12px;width:275px;background:#3d495b;color:#edf4fb;border:1px solid #718196;border-radius:6px;box-shadow:0 14px 34px #0008;padding:10px}
+  #pidVisualPanel[hidden],#pidValidatePanel[hidden]{display:none!important}
+  #pidVisualPanel h2,#pidValidatePanel h2{color:#fff;font-size:12px;margin:0 0 8px;letter-spacing:.06em}
+  #pidVisualPanel label{color:#dce7f1;font-size:11px;margin:8px 0;display:block}
+  #pidVisualPanel input[type="color"]{width:100%;height:32px;padding:2px;border:0;background:transparent}
+  #pidVisualPanel .pidVisualRow{display:flex;align-items:center;gap:7px}
+  #pidVisualPanel .pidVisualRow input{width:auto}
+  #pidVisualPanel button,#pidValidatePanel button{margin-top:8px;width:100%;background:#526177!important;color:#fff!important;border-color:#8293a7!important;font-size:10px!important;padding:5px!important}
+  #pidValidatePanel ul{padding-left:18px;margin:7px 0;color:#dce7f1;font-size:11px;line-height:1.5}
+  #pidValidatePanel .pidPass{color:#9ce4bb}.pidFail{color:#ffd29f}
+  #pidLineLengthEditor{margin:0 0 10px;padding:8px;border:1px solid #b9cbd8;border-radius:6px;background:#f7fafc}
+  #pidLineLengthEditor[hidden]{display:none!important}
+  #pidLineLengthEditor h3{margin:0 0 5px;color:#365269;font-size:11px;text-transform:uppercase}
+  #pidLineLengthEditor label{font-size:10px;margin:5px 0 3px}
+  #pidLineLengthEditor input{padding:5px;font-size:11px}
+  #pidLineLengthEditor button{margin-top:6px;padding:5px;font-size:10px;width:100%}
+  @media(max-width:850px){body.pid-palette-mode main{grid-template-columns:1fr!important}body.pid-palette-mode aside.right{display:none!important}#pidPal{left:4px!important;width:260px!important}#pidVisualPanel,#pidValidatePanel{right:4px;width:min(275px,calc(100vw - 8px))}}
+  @media print{#pidVisualPanel,#pidValidatePanel,#pidLineLengthEditor{display:none!important}}
+</style>
+<script id="pidPlant3DPaletteRefinementScript">
+(()=>{
+  function init(){
+  if(document.body.dataset.pidPaletteRefined==='1')return;
+  document.body.dataset.pidPaletteRefined='1';
+  const $=id=>document.getElementById(id),q=s=>document.querySelector(s),all=s=>[...document.querySelectorAll(s)];
+  const pal=$('pidPal'),menu=$('pidCadMenu'),ribbon=$('pidCadRibbon'),canvas=q('.canvas'),svg=$('diagram'),properties=q('aside.right');
+  document.body.classList.add('pid-palette-mode');
+  $('pidQuickTools')?.remove();
+  const visual=document.createElement('section');visual.id='pidVisualPanel';visual.hidden=true;
+  visual.innerHTML='<h2>Visual styles</h2><label>Sheet background<input id="pidSheetColor" type="color" value="#f9fbfc"></label><label class="pidVisualRow"><input id="pidShowGrid" type="checkbox" checked> Show grid</label><button id="pidVisualClose" type="button">Close</button>';
+  document.body.append(visual);
+  function setSheet(){if(!canvas)return;const color=$('pidSheetColor').value,grid=$('pidShowGrid').checked;canvas.style.backgroundColor=color;canvas.style.backgroundImage=grid?'radial-gradient(#c8d3db 1px,transparent 1px)':'none';localStorage.setItem('pidSheetStyle',JSON.stringify({color,grid}));}
+  try{const saved=JSON.parse(localStorage.getItem('pidSheetStyle')||'null');if(saved){$('pidSheetColor').value=saved.color||'#f9fbfc';$('pidShowGrid').checked=saved.grid!==false;setSheet();}}catch(e){}
+  $('pidSheetColor').oninput=setSheet;$('pidShowGrid').onchange=setSheet;$('pidVisualClose').onclick=()=>visual.hidden=true;
+  const validator=document.createElement('section');validator.id='pidValidatePanel';validator.hidden=true;document.body.append(validator);
+  function validate(){
+    const ignored=new Set(['annotation','flowDirection','rectangle','square','circle','ellipse','straightLine','star','triangle','diamond']);
+    const material=state.nodes.filter(n=>!ignored.has(n.type)),tags=new Map(),issues=[];
+    material.forEach(n=>{const tag=String(n.tag||'').trim();if(!tag)issues.push('An item is missing a tag.');else tags.set(tag,(tags.get(tag)||0)+1);});
+    [...tags].filter(([,count])=>count>1).forEach(([tag])=>issues.push('Duplicate tag: '+tag+'.'));
+    state.pipes.forEach(p=>{if(!state.nodes.some(n=>n.id===p.a)||!state.nodes.some(n=>n.id===p.b))issues.push('A pipe has a missing connection.');});
+    const text=issues.length?'<p class="pidFail">Review before issue or construction.</p><ul>'+issues.map(x=>'<li>'+x+'</li>').join('')+'</ul>':'<p class="pidPass">Basic drawing-data check passed.</p><ul><li>'+material.length+' tagged components checked</li><li>'+state.pipes.length+' pipe connections checked</li></ul>';
+    validator.innerHTML='<h2>Drawing validation</h2>'+text+'<button id="pidValidateClose" type="button">Close</button>';
+    validator.hidden=false;$('pidValidateClose').onclick=()=>validator.hidden=true;
+  }
+  function tool(action){if(action==='select')return q('[data-tool="select"]')?.click();if(action==='pipe')return q('[data-tool="pipe"]')?.click();if(action==='title')return $('titleBlockTool')?.click();if(action==='bom')return $('bomSheetTool')?.click();if(action==='kks')return $('kksBtn')?.click();if(action==='check')return validate();if(action==='visual')return visual.hidden=!visual.hidden;if(action==='manager')return $('pidPmBtn')?.click();if(action==='workspace')return $('pidWs')?.click();}
+  const homeTools=[['Project manager','manager'],['Workspace','workspace'],['Select / edit','select'],['Draw pipe','pipe'],['Straight line','symbol:straightLine'],['Text note','symbol:annotation'],['Title block','title'],['BOM on sheet','bom'],['KKS / data','kks'],['Validate drawing','check'],['Visual styles','visual'],['Plant 3D','plant3d']];
+  const palettes=[['home','Home'],['equipment','Equipment'],['valves','Valves'],['instruments','Instruments'],['piping','Piping'],['electrical','Electrical'],['shapes','Shapes']];
+  let active='home';
+  function source(type){return q('#library .symbol[data-type="'+CSS.escape(type)+'"]');}
+  function iconFor(button){return button?.querySelector('svg')?.outerHTML||'<span class="pidIcon">◇</span>';}
+  function clickAction(action){if(action.startsWith('symbol:'))return source(action.slice(7))?.click();if(action==='plant3d')return $('pidPlant3DTool')?.click();tool(action);}
+  function paletteContent(key){
+    if(key==='home'){
+      const tools=homeTools.map(([label,action])=>'<button type="button" data-home="'+action+'">'+label+'</button>').join('');
+      const styles=['process','utility','instrument','signal'].map(x=>'<button type="button" data-style="'+x+'">'+x[0].toUpperCase()+x.slice(1)+' line</button>').join('');
+      const streams=all('.process-tab').map(button=>'<button type="button" data-stream="'+button.dataset.processSection+'">'+button.textContent+'</button>').join('');
+      return '<div class="pidPaletteGroup"><h4>Home tools</h4><div class="pidHomeGrid">'+tools+'</div></div><div class="pidPaletteGroup"><h4>Pipe & signal styles</h4><div class="pidHomeGrid">'+styles+'</div></div><div class="pidPaletteGroup"><h4>Process section</h4><div class="pidProcessGrid">'+streams+'</div></div>';
+    }
+    const buttons=all('#library .symbol').filter(button=>String(button.dataset.category||'').toLowerCase()===key&&!button.hidden);
+    return '<div class="pidGrid">'+buttons.map(button=>'<button type="button" class="pidTool" data-symbol="'+button.dataset.type+'" title="'+button.textContent.trim()+'">'+iconFor(button)+'<small>'+button.textContent.trim()+'</small></button>').join('')+'</div>'+(buttons.length?'':'<p>No symbols in this category.</p>');
+  }
+  function renderPalette(key=active){active=palettes.some(x=>x[0]===key)?key:'home';const tabs=palettes.map(([id,label])=>'<button type="button" class="pidTab '+(id===active?'on':'')+'" data-palette="'+id+'">'+label+'</button>').join('');const heading=(palettes.find(x=>x[0]===active)||palettes[0])[1];pal.innerHTML='<div class="pidTabs">'+tabs+'</div><div class="pidPalHead"><span class="pidGrip">⠿</span><b>TOOL PALETTES — '+heading.toUpperCase()+'</b><button type="button" id="pidHide">×</button></div><div class="pidPalBody">'+paletteContent(active)+'</div>';pal.querySelectorAll('[data-palette]').forEach(button=>button.onclick=()=>renderPalette(button.dataset.palette));pal.querySelectorAll('[data-symbol]').forEach(button=>button.onclick=()=>source(button.dataset.symbol)?.click());pal.querySelectorAll('[data-home]').forEach(button=>button.onclick=()=>clickAction(button.dataset.home));pal.querySelectorAll('[data-style]').forEach(button=>button.onclick=()=>q('[data-line-style="'+button.dataset.style+'"]').click());pal.querySelectorAll('[data-stream]').forEach(button=>button.onclick=()=>q('.process-tab[data-process-section="'+button.dataset.stream+'"]').click());$('pidHide').onclick=()=>{pal.hidden=true;localStorage.setItem('pidPaletteHidden','1');};wireDrag();}
+  function wireDrag(){const grip=q('#pidPal .pidGrip');if(!grip)return;let origin=null;grip.onpointerdown=event=>{const box=pal.getBoundingClientRect();origin={x:event.clientX-box.left,y:event.clientY-box.top};grip.setPointerCapture?.(event.pointerId);};grip.onpointermove=event=>{if(!origin)return;const box=pal.getBoundingClientRect();pal.style.left=Math.max(0,Math.min(innerWidth-box.width,event.clientX-origin.x))+'px';pal.style.top=Math.max(0,Math.min(innerHeight-box.height,event.clientY-origin.y))+'px';pal.style.right='auto';};grip.onpointerup=()=>{origin=null;const box=pal.getBoundingClientRect();localStorage.setItem('pidPalettePos',JSON.stringify({x:Math.round(box.left),y:Math.round(box.top)}));};}
+  const oldShow=$('pidShowPal');if(oldShow)oldShow.onclick=()=>{pal.hidden=false;localStorage.removeItem('pidPaletteHidden');};
+  if(localStorage.getItem('pidPaletteHidden')==='1')pal.hidden=true;renderPalette();
+  function makeHome(){if(!ribbon)return;ribbon.innerHTML='';const title=document.createElement('span');title.className='pidRibbonTitle';title.textContent='HOME';ribbon.append(title);[['Project manager','manager'],['Workspace','workspace'],['Tool palettes',null],['Draw pipe','pipe'],['P&ID annotate','symbol:annotation'],['Assign / edit tag','select'],['KKS / data','kks'],['Validate drawing','check'],['Visual styles','visual'],['Title block','title']].forEach(([label,action])=>{const button=document.createElement('button');button.type='button';button.textContent=label;button.onclick=()=>{if(!action){pal.hidden=false;return;}clickAction(action);};ribbon.append(button);});}
+  const homeButton=document.createElement('button');homeButton.type='button';homeButton.id='pidHomeMenu';homeButton.textContent='Home';menu?.insertBefore(homeButton,menu.firstChild);homeButton.onclick=makeHome;
+  menu?.addEventListener('click',event=>{const target=event.target.closest('button');if(!target||target===homeButton)return;if(target.dataset.section==='view')requestAnimationFrame(()=>{if(!$('pidViewVisual')){const button=document.createElement('button');button.id='pidViewVisual';button.type='button';button.textContent='Visual styles';button.onclick=()=>visual.hidden=!visual.hidden;ribbon?.append(button);}});});
+  makeHome();
+  const lineEditor=document.createElement('section');lineEditor.id='pidLineLengthEditor';lineEditor.hidden=true;if(properties)properties.insertBefore(lineEditor,properties.firstChild);
+  function adjustLines(){all('#nodes .node').forEach(group=>{const node=state.nodes.find(item=>item.id===group.dataset.id);if(!node||node.type!=='straightLine'||!node.length)return;const path=group.querySelector('path.shape');if(path)path.setAttribute('d','M '+(-node.length/2)+' 0 H '+(node.length/2));});}
+  const baseRender=render;render=function(){baseRender();adjustLines();};adjustLines();
+  function showLineEditor(){const node=state.nodes.find(item=>item.id===state.selected);if(!node||node.type!=='straightLine'){lineEditor.hidden=true;return;}lineEditor.hidden=false;lineEditor.innerHTML='<h3>Straight line</h3><label>Length (drawing units)<input id="pidLineLength" type="number" min="10" max="5000" value="'+Math.round(node.length||96)+'"></label><button id="pidLineApply" type="button" class="primary">Apply length</button>';$('pidLineApply').onclick=()=>{node.length=Math.max(10,Math.min(5000,Number($('pidLineLength').value)||96));render();showLineEditor();};}
+  let start=null,preview=null;
+  function freeLine(event){if(state.tool!=='place'||state.pendingType!=='straightLine')return;const p=point(event);if(event.type==='pointerdown'){start=p;preview=document.createElementNS('http://www.w3.org/2000/svg','path');preview.setAttribute('id','pidFreeLinePreview');preview.setAttribute('stroke','#ec8e2f');preview.setAttribute('stroke-width','2');preview.setAttribute('fill','none');svg.append(preview);svg.setPointerCapture?.(event.pointerId);event.preventDefault();event.stopImmediatePropagation();return;}if(!start)return;if(event.type==='pointermove'){preview?.setAttribute('d','M '+start.x+' '+start.y+' L '+p.x+' '+p.y);event.stopImmediatePropagation();return;}if(event.type==='pointerup'){const dx=p.x-start.x,dy=p.y-start.y,length=Math.round(Math.hypot(dx,dy));preview?.remove();preview=null;if(length>=10){state.nodes.push({id:'n'+state.next++,type:'straightLine',x:Math.round(start.x+dx/2),y:Math.round(start.y+dy/2),rotation:Math.round(Math.atan2(dy,dx)*180/Math.PI),tag:nextTag('straightLine'),label:'Line',length});state.pendingType=null;state.tool='select';state.selected=null;render();$('mode').textContent='Straight line created — select it to edit its length.';}start=null;event.preventDefault();event.stopImmediatePropagation();}}
+  svg?.addEventListener('pointerdown',freeLine,true);svg?.addEventListener('pointermove',freeLine,true);svg?.addEventListener('pointerup',freeLine,true);svg?.addEventListener('pointercancel',()=>{preview?.remove();preview=null;start=null;},true);
+  svg?.addEventListener('pointerup',()=>setTimeout(showLineEditor,0),false);document.addEventListener('keydown',event=>{if(event.key==='Escape'&&start){preview?.remove();preview=null;start=null;}},true);
+  }
+  if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',init,{once:true});else init();
+})();
+</script>
+
 <script>document.querySelectorAll('header button').forEach(b=>{if(!b.id&&['KKS / Excel','Check drawing'].includes(b.textContent.trim()))b.remove();});</script>
 <script>(()=>{const b=document.getElementById("checkBtn"),m=document.getElementById("checkBackdrop"),r=document.getElementById("checkResult");if(!b||!m||!r)return;b.addEventListener("click",()=>{const n=Number((document.getElementById("counts")?.textContent.match(/^(\d+) symbols/)||[,"0"])[1]);if(n===0){r.className="check-status bad";r.innerHTML="<strong>Needs modification</strong><br>The drawing has no equipment, valve, or instrument symbols.";m.hidden=false;}});})();</script>
 </script>
