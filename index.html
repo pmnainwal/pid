@@ -380,7 +380,61 @@
   document.getElementById('downloadDxf').onclick=()=>{const d=['0','SECTION','2','ENTITIES'];state.pipes.forEach(p=>{const a=state.nodes.find(n=>n.id===p.a),b=state.nodes.find(n=>n.id===p.b);if(!a||!b)return;d.push('0','LINE','8','PIPING','10',a.x,'20',a.y,'11',b.x,'21',b.y);if(p.size)d.push('0','TEXT','8','ANNOTATION','10',(a.x+b.x)/2,'20',(a.y+b.y)/2-8,'40','8','1',p.size);});state.nodes.filter(kItem).forEach(n=>{d.push('0','CIRCLE','8','EQUIPMENT','10',n.x,'20',n.y,'40','18','0','TEXT','8','ANNOTATION','10',n.x+22,'20',n.y+4,'40','8','1',n.tag||n.label||n.type);if(n.kks)d.push('0','TEXT','8','KKS','10',n.x+22,'20',n.y+14,'40','6','1',n.kks);});d.push('0','ENDSEC','0','EOF');download('pid-studio.dxf',new Blob([d.join('\n')],{type:'application/dxf'}));};
   markKks();
 })();
-</script>\n</body>
+</script>
+<style id="pidDockLayoutRefinement">
+  body.pid-palette-mode.pid-props-off main{grid-template-columns:minmax(0,1fr)!important}
+  body.pid-palette-mode.pid-props-off main>.canvas-wrap{grid-column:1!important;width:100%!important;max-width:none!important;min-width:0!important}
+  body.pid-palette-mode.pid-props-off .canvas{width:100%!important;min-width:0!important}
+  .pidDockGrip{position:absolute;z-index:2;top:7px;left:7px;width:18px!important;height:18px!important;min-height:18px!important;padding:0!important;border:1px solid #73869a!important;border-radius:3px!important;background:#304b61!important;color:#fff!important;cursor:grab!important;font-size:12px!important;line-height:1!important;touch-action:none;user-select:none}
+  .pidDockGrip:active{cursor:grabbing!important}
+  #pidPipePanel h2,#pidVisualPanel h2,#pidValidatePanel h2{margin-left:23px!important}
+  #pidWsMenu .pidH,#pidPm .pidH{padding-left:30px!important}
+  .pidDraggableDialog{position:relative}
+  @media print{.pidDockGrip{display:none!important}}
+</style>
+<script id="pidDockLayoutRefinementScript">
+(()=>{
+  const ready=()=>{
+    if(document.body.dataset.pidDockRefined==='1')return;
+    document.body.dataset.pidDockRefined='1';
+    setTimeout(install,0);
+  };
+  function install(){
+    const $=id=>document.getElementById(id),all=s=>[...document.querySelectorAll(s)];
+    $('pidQuickTools')?.remove();
+    $('pidDataDock')?.remove();
+    $('pidViewPanel')?.remove();
+    function position(el,key,modal){
+      if(!el||(el.dataset.pidDocked==='1'&&el.querySelector(':scope > .pidDockGrip')))return;
+      el.dataset.pidDocked='1';
+      el.classList.toggle('pidDraggableDialog',!!modal);
+      const grip=document.createElement('button');
+      grip.type='button';grip.className='pidDockGrip';grip.textContent='⠿';grip.title='Drag to move';grip.setAttribute('aria-label','Drag panel to move');
+      el.prepend(grip);
+      try{const saved=JSON.parse(localStorage.getItem(key)||'null');if(saved&&Number.isFinite(saved.left)&&Number.isFinite(saved.top)){Object.assign(el.style,{position:'fixed',left:saved.left+'px',top:saved.top+'px',right:'auto',bottom:'auto',transform:'none'});}}catch(e){}
+      let offset=null;
+      const release=()=>{if(!offset)return;const box=el.getBoundingClientRect();localStorage.setItem(key,JSON.stringify({left:Math.round(box.left),top:Math.round(box.top)}));offset=null;};
+      grip.addEventListener('pointerdown',event=>{event.preventDefault();const box=el.getBoundingClientRect();if(modal)Object.assign(el.style,{position:'fixed',left:Math.round(box.left)+'px',top:Math.round(box.top)+'px',right:'auto',bottom:'auto',transform:'none'});offset={x:event.clientX-box.left,y:event.clientY-box.top};try{grip.setPointerCapture(event.pointerId)}catch(e){}});
+      grip.addEventListener('pointermove',event=>{if(!offset)return;const box=el.getBoundingClientRect(),left=Math.max(0,Math.min(innerWidth-box.width,event.clientX-offset.x)),top=Math.max(0,Math.min(innerHeight-box.height,event.clientY-offset.y));Object.assign(el.style,{left:Math.round(left)+'px',top:Math.round(top)+'px',right:'auto',bottom:'auto'});});
+      grip.addEventListener('pointerup',release);grip.addEventListener('pointercancel',release);
+    }
+    [['pidPipePanel','pidPipingPanelPosition'],['pidVisualPanel','pidVisualPanelPosition'],['pidValidatePanel','pidValidationPanelPosition'],['pidWsMenu','pidWorkspaceMenuPosition'],['pidPm','pidProjectManagerPosition']].forEach(([id,key])=>position($(id),key,false));
+    all('#kksBackdrop .kks-card,#checkBackdrop .kks-card,#kksModal .generator-card,#reviewModal .generator-card,#pidPlant3DPanel article').forEach((el,index)=>position(el,'pidDialogPosition'+index,true));
+    new MutationObserver(()=>{position($('pidWsMenu'),'pidWorkspaceMenuPosition',false);position($('pidPm'),'pidProjectManagerPosition',false);}).observe(document.body,{childList:true,subtree:true});
+    document.addEventListener('click',event=>{
+      const menuButton=event.target.closest('#pidCadMenu button[data-section]');
+      if(menuButton?.dataset.section!=='view')return;
+      requestAnimationFrame(()=>{
+        const ribbon=$('pidCadRibbon');
+        ribbon?.querySelectorAll('button').forEach(button=>{if(['Show / hide tools','Reset toolbar positions'].includes(button.textContent.trim()))button.remove();});
+        if(ribbon&&!$('pidViewVisual')){const button=document.createElement('button');button.type='button';button.id='pidViewVisual';button.textContent='Visual styles';button.onclick=()=>{const panel=$('pidVisualPanel');if(panel)panel.hidden=!panel.hidden;};ribbon.append(button);}
+      });
+    },true);
+  }
+  if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',ready,{once:true});else ready();
+})();
+</script>
+\n</body>
 </html>
 
 <script>
