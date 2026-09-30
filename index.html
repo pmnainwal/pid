@@ -381,6 +381,206 @@
   markKks();
 })();
 </script>
+<style id="pidCadInteractionStyle">
+  /* Tool palette: keep the original P&ID artwork as clear outlines when copied into the palette. */
+  #pidPal{width:344px!important;max-width:calc(100vw - 16px)!important}
+  #pidPal .pidPalBody{scrollbar-gutter:stable;padding:41px 10px 12px!important}
+  #pidPal .pidGrid{grid-template-columns:repeat(3,minmax(0,1fr))!important;gap:7px!important}
+  #pidPal .pidTool{height:72px!important;min-height:72px!important;padding:5px 3px!important;gap:4px!important}
+  #pidPal .pidTool svg{width:30px!important;height:30px!important;display:block!important;flex:none!important;stroke:#dceeff!important;fill:none!important;stroke-width:1.8!important;overflow:visible}
+  #pidPal .pidTool svg *{fill:none!important;stroke:inherit!important;vector-effect:non-scaling-stroke}
+  #pidPal .pidTool svg text{fill:#dceeff!important;stroke:none!important;font:700 13px Inter,Segoe UI,Arial,sans-serif!important}
+  #pidPal .pidTool:hover svg{stroke:#fff!important}
+  #pidPal .pidTool small{display:block!important;width:100%!important;max-width:100%!important;overflow:hidden!important;text-overflow:ellipsis!important;white-space:nowrap!important;text-align:center!important;color:#f3f8fc!important;font-size:9px!important;line-height:1.15!important}
+  .node.pidMultiSelected .shape{stroke:#ec8e2f!important;stroke-width:3!important}
+  .pipe.pidMultiSelected{stroke:#ec8e2f!important;stroke-width:5!important}
+  #pidCadOverlay{pointer-events:none}
+  #pidCadOverlay .pidCadGrip{fill:#fff;stroke:#ec8e2f;stroke-width:2}
+  #pidCadOverlay .pidCadEnd{fill:#fff;stroke:#1769aa;stroke-width:2}
+  #pidCadOverlay .pidCadMid{fill:#fff8ef;stroke:#ec8e2f;stroke-width:2}
+  #pidCadOverlay .pidCadCenter{fill:#e9f6ff;stroke:#1769aa;stroke-width:2}
+  #pidCadOverlay .pidCadGuide{stroke:#1769aa;stroke-width:1.4;stroke-dasharray:6 5;fill:none;opacity:.88}
+  #pidCadOverlay .pidCadCross{stroke:#1769aa;stroke-width:1.4;fill:none}
+  #pidCadOverlay .pidCadHot{fill:#ec8e2f;stroke:#fff;stroke-width:1.5}
+  #pidCadOverlay .pidCadMarquee{fill:#8ed1ff;fill-opacity:.13;stroke:#1769aa;stroke-width:1.3;stroke-dasharray:6 4}
+  #pidCadOverlay .pidCadLabel{font:11px Inter,Segoe UI,Arial,sans-serif;fill:#075a93;paint-order:stroke;stroke:#fff;stroke-width:3;stroke-linejoin:round}
+  #pidDraftingPanel{position:fixed;z-index:76;top:112px;right:12px;width:272px;background:#3d495b;color:#edf4fb;border:1px solid #718196;border-radius:6px;box-shadow:0 14px 34px #0008;padding:0 10px 10px}
+  #pidDraftingPanel[hidden]{display:none!important}
+  #pidDraftingPanel .pidDraftHead{height:34px;display:flex;align-items:center;gap:7px;margin:0 -10px 8px;padding:0 9px;border-bottom:1px solid #66768a;background:#303b4b;cursor:grab;user-select:none}
+  #pidDraftingPanel .pidDraftHead b{font-size:11px;letter-spacing:.06em}
+  #pidDraftingPanel .pidDraftHead button{margin-left:auto;width:auto!important;min-height:22px!important;padding:2px 7px!important;background:#526177!important;color:#fff!important;border-color:#8293a7!important;font-size:11px!important}
+  #pidDraftingPanel label{display:flex;align-items:center;gap:7px;margin:7px 0;color:#edf4fb;font-size:11px}
+  #pidDraftingPanel input[type="checkbox"],#pidDraftingPanel input[type="radio"]{width:auto;margin:0;accent-color:#62b8ee}
+  #pidDraftingPanel select{margin-left:auto;width:82px;padding:4px 5px;background:#fff;color:#16212b;font-size:11px}
+  #pidDraftingPanel .pidDraftHint{margin:8px 0 0;padding:7px;border-left:3px solid #8ed1ff;background:#303c4c;color:#dbe8f3;font-size:10px;line-height:1.4}
+  #pidDraftStatus{color:#365269;font-size:10px;white-space:nowrap}
+  #pidDraftToggle{white-space:nowrap}
+  @media(max-width:850px){#pidPal{width:292px!important}#pidPal .pidGrid{grid-template-columns:repeat(3,minmax(0,1fr))!important}#pidDraftingPanel{right:4px;width:min(272px,calc(100vw - 8px))}}
+  @media print{#pidDraftingPanel,#pidDraftToggle,#pidDraftStatus{display:none!important}}
+</style>
+<script id="pidCadInteraction">
+(()=>{
+  const boot=()=>{
+  if(document.documentElement.dataset.pidCadInteraction==='1')return;
+  document.documentElement.dataset.pidCadInteraction='1';
+  const $=id=>document.getElementById(id);
+  const diagram=$('diagram');
+  if(!diagram||typeof state==='undefined')return;
+  const ns='http://www.w3.org/2000/svg';
+  const canvas=diagram.closest('.canvas');
+  const controls=$('pidCanvasControls');
+  const baseRender=render;
+  const aidDefaults={objectSnap:true,tracking:true,trackingMode:'ortho',polarAngle:45,snapRange:18};
+  let aids={...aidDefaults};
+  try{aids={...aidDefaults,...JSON.parse(localStorage.getItem('pidCadDraftingAids')||'{}')};}catch(e){}
+  state.cadSelectedIds=Array.isArray(state.cadSelectedIds)?state.cadSelectedIds:[];
+  let overlay=$('pidCadOverlay');
+  if(!overlay){overlay=document.createElementNS(ns,'g');overlay.id='pidCadOverlay';overlay.setAttribute('pointer-events','none');diagram.append(overlay);}
+  let interaction=null,ignoreClickUntil=0,hotSnap=null;
+  const clean=v=>String(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#039;'}[c]));
+  function rawPoint(event){const box=diagram.getBoundingClientRect();return {x:(event.clientX-box.left)*state.canvas.width/box.width,y:(event.clientY-box.top)*state.canvas.height/box.height};}
+  function rotationPoint(cx,cy,dx,dy,angle){const r=(Number(angle)||0)*Math.PI/180,cos=Math.cos(r),sin=Math.sin(r);return {x:cx+dx*cos-dy*sin,y:cy+dx*sin+dy*cos};}
+  function nodeSnapPoints(node){
+    const shape=(definition(node.type).shape||node.type),cx=Number(node.x)||0,cy=Number(node.y)||0,rotation=Number(node.rotation)||0;
+    if(shape==='straightLine'){
+      const half=Math.max(10,Number(node.length)||96)/2;
+      return [
+        {...rotationPoint(cx,cy,-half,0,rotation),kind:'end',label:'Endpoint'},
+        {x:cx,y:cy,kind:'mid',label:'Midpoint'},
+        {...rotationPoint(cx,cy,half,0,rotation),kind:'end',label:'Endpoint'}
+      ];
+    }
+    const half=shape==='tank'?52:shape==='annotation'?84:shape==='flowDirection'?38:shape==='rectangle'||shape==='ellipse'?46:shape==='square'?28:shape==='circle'?29:shape==='triangle'||shape==='diamond'||shape==='star'?35:shape==='pump'||shape==='compressor'?52:34;
+    return [
+      {x:cx,y:cy,kind:'center',label:'Center'},
+      {...rotationPoint(cx,cy,-half,0,rotation),kind:'end',label:'Endpoint'},
+      {...rotationPoint(cx,cy,half,0,rotation),kind:'end',label:'Endpoint'},
+      {...rotationPoint(cx,cy,0,-Math.min(half,36),rotation),kind:'mid',label:'Midpoint'},
+      {...rotationPoint(cx,cy,0,Math.min(half,36),rotation),kind:'mid',label:'Midpoint'}
+    ];
+  }
+  function pipeSnapPoints(pipe){const a=state.nodes.find(item=>item.id===pipe.a),b=state.nodes.find(item=>item.id===pipe.b);if(!a||!b)return [];return [{x:a.x,y:a.y,kind:'end',label:'Endpoint'},{x:(Number(a.x)+Number(b.x))/2,y:(Number(a.y)+Number(b.y))/2,kind:'mid',label:'Midpoint'},{x:b.x,y:b.y,kind:'end',label:'Endpoint'}];}
+  function allSnapPoints(excluded=new Set()){const points=[];state.nodes.forEach(node=>{if(!excluded.has(node.id))nodeSnapPoints(node).forEach(point=>points.push({...point,owner:node.id}));});state.pipes.forEach(pipe=>{if(!excluded.has(pipe.id)&&!excluded.has(pipe.a)&&!excluded.has(pipe.b))pipeSnapPoints(pipe).forEach(point=>points.push({...point,owner:pipe.id}));});return points;}
+  function nearestSnap(candidate,excluded=new Set()){if(!aids.objectSnap)return null;let nearest=null,best=Math.max(4,Number(aids.snapRange)||18);allSnapPoints(excluded).forEach(point=>{const distance=Math.hypot(point.x-candidate.x,point.y-candidate.y);if(distance<=best){best=distance;nearest=point;}});return nearest;}
+  function trackFrom(anchor,candidate){
+    if(!aids.tracking||!anchor)return {...candidate,track:''};
+    const dx=candidate.x-anchor.x,dy=candidate.y-anchor.y;
+    if(aids.trackingMode==='polar'){
+      const length=Math.hypot(dx,dy);if(!length)return {x:anchor.x,y:anchor.y,track:'Polar'};
+      const step=(Number(aids.polarAngle)||45)*Math.PI/180,angle=Math.round(Math.atan2(dy,dx)/step)*step;
+      return {x:anchor.x+Math.cos(angle)*length,y:anchor.y+Math.sin(angle)*length,track:'Polar '+(Number(aids.polarAngle)||45)+'°'};
+    }
+    return Math.abs(dx)>=Math.abs(dy)?{x:candidate.x,y:anchor.y,track:'Ortho'}:{x:anchor.x,y:candidate.y,track:'Ortho'};
+  }
+  function marker(point){
+    const x=Math.round(point.x*10)/10,y=Math.round(point.y*10)/10;
+    if(point.kind==='end')return '<rect class="pidCadEnd" x="'+(x-4)+'" y="'+(y-4)+'" width="8" height="8" rx="1"/>';
+    if(point.kind==='mid')return '<path class="pidCadMid" d="M '+x+' '+(y-5)+' L '+(x+5)+' '+y+' L '+x+' '+(y+5)+' L '+(x-5)+' '+y+' Z"/>';
+    return '<circle class="pidCadCenter" cx="'+x+'" cy="'+y+'" r="4.5"/>';
+  }
+  function selectedIds(){const existing=new Set([...state.nodes.map(item=>item.id),...state.pipes.map(item=>item.id)]);state.cadSelectedIds=[...new Set(state.cadSelectedIds)].filter(id=>existing.has(id));if(state.selected&&!existing.has(state.selected))state.selected=null;if(!state.selected&&state.cadSelectedIds.length)state.selected=state.cadSelectedIds.at(-1);return state.cadSelectedIds;}
+  function setSelection(ids,primary){const existing=new Set([...state.nodes.map(item=>item.id),...state.pipes.map(item=>item.id)]);state.cadSelectedIds=[...new Set(ids)].filter(id=>existing.has(id));state.selected=primary&&state.cadSelectedIds.includes(primary)?primary:(state.cadSelectedIds.at(-1)||null);}
+  function deleteCadSelection(){const active=new Set(selectedIds());if(!active.size)return;const nodesToRemove=new Set(state.nodes.filter(node=>active.has(node.id)).map(node=>node.id));state.pipes.forEach(pipe=>{if(active.has(pipe.id)){nodesToRemove.add(pipe.a);nodesToRemove.add(pipe.b);}});state.pipes=state.pipes.filter(pipe=>!active.has(pipe.id)&&!nodesToRemove.has(pipe.a)&&!nodesToRemove.has(pipe.b));state.nodes=state.nodes.filter(node=>!nodesToRemove.has(node.id));setSelection([],null);render();}
+  function selectedSnapMarks(){let markup='';selectedIds().forEach(id=>{const node=state.nodes.find(item=>item.id===id),pipe=state.pipes.find(item=>item.id===id);const points=node?nodeSnapPoints(node):(pipe?pipeSnapPoints(pipe):[]);markup+=points.map(marker).join('');if(node)markup+='<circle class="pidCadGrip" cx="'+node.x+'" cy="'+node.y+'" r="8" fill-opacity=".18"/>';});return markup;}
+  function drawOverlay(extra={}){
+    const data=[];data.push(selectedSnapMarks());
+    if(extra.box){const x=Math.min(extra.box.x1,extra.box.x2),y=Math.min(extra.box.y1,extra.box.y2),width=Math.abs(extra.box.x2-extra.box.x1),height=Math.abs(extra.box.y2-extra.box.y1);data.push('<rect class="pidCadMarquee" x="'+x+'" y="'+y+'" width="'+width+'" height="'+height+'"/>');}
+    if(extra.guide){data.push('<path class="pidCadGuide" d="M '+extra.guide.x1+' '+extra.guide.y1+' L '+extra.guide.x2+' '+extra.guide.y2+'"/>');}
+    if(extra.cursor){const p=extra.cursor;data.push('<path class="pidCadCross" d="M '+(p.x-8)+' '+p.y+' H '+(p.x+8)+' M '+p.x+' '+(p.y-8)+' V '+(p.y+8)+'"/>');if(extra.label)data.push('<text class="pidCadLabel" x="'+(p.x+11)+'" y="'+(p.y-11)+'">'+clean(extra.label)+'</text>');}
+    if(hotSnap){data.push('<circle class="pidCadHot" cx="'+hotSnap.x+'" cy="'+hotSnap.y+'" r="5.5"/>');data.push('<text class="pidCadLabel" x="'+(hotSnap.x+10)+'" y="'+(hotSnap.y-9)+'">'+clean(hotSnap.label||'Snap')+'</text>');}
+    overlay.innerHTML=data.join('');
+  }
+  function updateSelectedStyles(){const active=new Set(selectedIds());diagram.querySelectorAll('.node[data-id]').forEach(el=>el.classList.toggle('pidMultiSelected',active.has(el.dataset.id)));diagram.querySelectorAll('.pipe[data-pipe]').forEach(el=>el.classList.toggle('pidMultiSelected',active.has(el.dataset.pipe)));}
+  function syncLineEditor(){const line=state.nodes.find(item=>item.id===state.selected&&item.type==='straightLine'),editor=$('pidLineLengthEditor');if(!editor)return;if(!line){editor.hidden=true;return;}editor.hidden=false;editor.innerHTML='<h3>Straight line</h3><label>Length (drawing units)<input id="pidCadLineLength" type="number" min="10" max="5000" value="'+Math.round(line.length||96)+'"></label><button id="pidCadLineApply" type="button" class="primary">Apply length</button>';$('pidCadLineApply').onclick=()=>{line.length=Math.max(10,Math.min(5000,Number($('pidCadLineLength').value)||96));render();};}
+  render=function(){baseRender();updateSelectedStyles();syncLineEditor();drawOverlay();};
+  function panelMarkup(){return '<div class="pidDraftHead" title="Drag panel to move"><span>⠿</span><b>DRAFTING AIDS</b><button type="button" id="pidDraftClose">×</button></div><label><input type="checkbox" id="pidObjectSnap"> Object snap (end, midpoint, center)</label><label><input type="checkbox" id="pidTracking"> Tracking while moving / drawing</label><label><input type="radio" name="pidTrackMode" value="ortho"> Track orthogonally only</label><label><input type="radio" name="pidTrackMode" value="polar"> Track using polar angles</label><label>Polar angle <select id="pidPolarAngle"><option value="15">15°</option><option value="30">30°</option><option value="45">45°</option><option value="90">90°</option></select></label><label>Snap range <select id="pidSnapRange"><option value="10">10 units</option><option value="18">18 units</option><option value="28">28 units</option></select></label><p class="pidDraftHint">Select an item to show grips: square = endpoint, diamond = midpoint, circle = center. Hold Ctrl while selecting to add or remove objects. Drag on blank sheet to select many objects.</p>';}
+  const panel=document.createElement('section');panel.id='pidDraftingPanel';panel.hidden=true;panel.setAttribute('aria-label','Drafting aids');panel.innerHTML=panelMarkup();document.body.append(panel);
+  const draftButton=document.createElement('button');draftButton.type='button';draftButton.id='pidDraftToggle';draftButton.textContent='Snap / track';draftButton.title='Object snap and tracking settings';
+  function panelInputs(){
+    const snap=$('pidObjectSnap'),tracking=$('pidTracking'),polar=$('pidPolarAngle'),range=$('pidSnapRange');
+    if(!snap)return;
+    snap.checked=!!aids.objectSnap;tracking.checked=!!aids.tracking;panel.querySelector('[name="pidTrackMode"][value="'+aids.trackingMode+'"]').checked=true;polar.value=String(aids.polarAngle);range.value=String(aids.snapRange);
+    const save=()=>{aids.objectSnap=snap.checked;aids.tracking=tracking.checked;aids.trackingMode=panel.querySelector('[name="pidTrackMode"]:checked').value;aids.polarAngle=Number(polar.value);aids.snapRange=Number(range.value);localStorage.setItem('pidCadDraftingAids',JSON.stringify(aids));updateDraftStatus();drawOverlay();};
+    [snap,tracking,polar,range,...panel.querySelectorAll('[name="pidTrackMode"]')].forEach(input=>input.addEventListener('change',save));
+    $('pidDraftClose').onclick=()=>panel.hidden=true;
+  }
+  panelInputs();
+  function openDrafting(){panel.hidden=!panel.hidden;}
+  draftButton.onclick=openDrafting;
+  if(controls){controls.append(draftButton);const status=document.createElement('span');status.id='pidDraftStatus';controls.append(status);}
+  function updateDraftStatus(){const status=$('pidDraftStatus');if(status)status.textContent=(aids.objectSnap?'Snap on':'Snap off')+' · '+(aids.tracking?(aids.trackingMode==='polar'?'Polar '+aids.polarAngle+'°':'Ortho'):'Track off');}
+  updateDraftStatus();
+  if($('pidDeleteSelected'))$('pidDeleteSelected').onclick=deleteCadSelection;
+  let panelDrag=null;
+  const panelHead=panel.querySelector('.pidDraftHead');
+  panelHead.addEventListener('pointerdown',event=>{if(event.target.closest('button'))return;const box=panel.getBoundingClientRect();panelDrag={x:event.clientX-box.left,y:event.clientY-box.top};panelHead.setPointerCapture?.(event.pointerId);});
+  panelHead.addEventListener('pointermove',event=>{if(!panelDrag)return;const box=panel.getBoundingClientRect();Object.assign(panel.style,{left:Math.max(0,Math.min(innerWidth-box.width,event.clientX-panelDrag.x))+'px',top:Math.max(0,Math.min(innerHeight-box.height,event.clientY-panelDrag.y))+'px',right:'auto'});});
+  const finishPanel=()=>{if(!panelDrag)return;const box=panel.getBoundingClientRect();localStorage.setItem('pidCadDraftPanelPosition',JSON.stringify({left:Math.round(box.left),top:Math.round(box.top)}));panelDrag=null;};panelHead.addEventListener('pointerup',finishPanel);panelHead.addEventListener('pointercancel',finishPanel);
+  try{const pos=JSON.parse(localStorage.getItem('pidCadDraftPanelPosition')||'null');if(pos&&Number.isFinite(pos.left)&&Number.isFinite(pos.top))Object.assign(panel.style,{left:pos.left+'px',top:pos.top+'px',right:'auto'});}catch(e){}
+  function addRibbonDraftButton(){const ribbon=$('pidCadRibbon');if(!ribbon||$('pidRibbonDrafting'))return;const title=ribbon.querySelector('.pidRibbonTitle')?.textContent||'';if(!/HOME|VIEW/i.test(title))return;const button=document.createElement('button');button.type='button';button.id='pidRibbonDrafting';button.textContent='Drafting aids';button.onclick=openDrafting;ribbon.append(button);}
+  addRibbonDraftButton();new MutationObserver(addRibbonDraftButton).observe($('pidCadRibbon')||document.body,{childList:true,subtree:true});
+  function moveSnap(nodeIds,baseDelta){const excluded=new Set(nodeIds);const candidates=nodeIds.flatMap(id=>{const node=state.nodes.find(item=>item.id===id);return node?nodeSnapPoints(node):[];});let found=null,best=Number(aids.snapRange)||18;const staticPoints=allSnapPoints(excluded);candidates.forEach(point=>{const shifted={x:point.x+baseDelta.x,y:point.y+baseDelta.y};staticPoints.forEach(target=>{const distance=Math.hypot(target.x-shifted.x,target.y-shifted.y);if(distance<=best){best=distance;found={target,delta:{x:baseDelta.x+target.x-shifted.x,y:baseDelta.y+target.y-shifted.y}};}});});return found;}
+  function nodeIdsForMove(id){const node=state.nodes.find(item=>item.id===id);if(node)return selectedIds().filter(key=>state.nodes.some(item=>item.id===key));const pipe=state.pipes.find(item=>item.id===id);if(!pipe)return [];const p=rawPoint(lastPointerEvent||{clientX:0,clientY:0});const a=state.nodes.find(item=>item.id===pipe.a),b=state.nodes.find(item=>item.id===pipe.b);if(a&&b){const nearA=Math.hypot(p.x-a.x,p.y-a.y),nearB=Math.hypot(p.x-b.x,p.y-b.y);if(Math.min(nearA,nearB)<24)return [nearA<=nearB?a.id:b.id];}return [pipe.a,pipe.b];}
+  let lastPointerEvent=null;
+  function startMove(event,id){
+    lastPointerEvent=event;
+    const start=rawPoint(event),moving=nodeIdsForMove(id),snapshots=new Map(moving.map(key=>{const node=state.nodes.find(item=>item.id===key);return [key,{x:node.x,y:node.y}];}));
+    interaction={kind:'move',pointerId:event.pointerId,start,moving,snapshots,last:start,moved:false};
+  }
+  function startMarquee(event){const start=rawPoint(event);interaction={kind:'marquee',pointerId:event.pointerId,start,base:[...selectedIds()],last:start,moved:false};drawOverlay({box:{x1:start.x,y1:start.y,x2:start.x,y2:start.y}});}
+  function selectFromMarquee(box,base){const minX=Math.min(box.x1,box.x2),maxX=Math.max(box.x1,box.x2),minY=Math.min(box.y1,box.y2),maxY=Math.max(box.y1,box.y2),ids=[...base];state.nodes.forEach(node=>{if(node.x>=minX&&node.x<=maxX&&node.y>=minY&&node.y<=maxY&&!ids.includes(node.id))ids.push(node.id);});state.pipes.forEach(pipe=>{const a=state.nodes.find(node=>node.id===pipe.a),b=state.nodes.find(node=>node.id===pipe.b);if(a&&b&&a.x>=minX&&a.x<=maxX&&a.y>=minY&&a.y<=maxY&&b.x>=minX&&b.x<=maxX&&b.y>=minY&&b.y<=maxY&&!ids.includes(pipe.id))ids.push(pipe.id);});setSelection(ids,ids.at(-1));}
+  function drawMove(event){if(!interaction)return;const raw=rawPoint(event),tracked=trackFrom(interaction.start,raw),baseDelta={x:tracked.x-interaction.start.x,y:tracked.y-interaction.start.y},snap=moveSnap(interaction.moving,baseDelta),delta=snap?snap.delta:baseDelta;hotSnap=snap?.target||null;interaction.moving.forEach(id=>{const node=state.nodes.find(item=>item.id===id),original=interaction.snapshots.get(id);if(node&&original){node.x=Math.round((original.x+delta.x)*10)/10;node.y=Math.round((original.y+delta.y)*10)/10;}});interaction.last={x:interaction.start.x+delta.x,y:interaction.start.y+delta.y};interaction.moved=true;render();drawOverlay({guide:{x1:interaction.start.x,y1:interaction.start.y,x2:interaction.last.x,y2:interaction.last.y},cursor:interaction.last,label:hotSnap?.label||tracked.track});}
+  function drawLine(event){if(!interaction)return;const raw=rawPoint(event),tracked=trackFrom(interaction.start,raw),snap=nearestSnap(tracked),end=snap?{x:snap.x,y:snap.y}:tracked;hotSnap=snap;interaction.last=end;drawOverlay({guide:{x1:interaction.start.x,y1:interaction.start.y,x2:end.x,y2:end.y},cursor:end,label:snap?.label||tracked.track});}
+  function finishLine(){const end=interaction.last,start=interaction.start,dx=end.x-start.x,dy=end.y-start.y,length=Math.round(Math.hypot(dx,dy));if(length>=10){const id='n'+state.next++;state.nodes.push({id,type:'straightLine',x:Math.round(start.x+dx/2),y:Math.round(start.y+dy/2),rotation:Math.round(Math.atan2(dy,dx)*180/Math.PI),tag:nextTag('straightLine'),label:'Line',length});state.pendingType=null;state.tool='select';setSelection([id],id);$('mode').textContent='Straight line created — select it to change its length, label, or position.';render();}else drawOverlay();}
+  function objectFromEvent(event){const target=event.target;if(!(target instanceof Element))return null;const group=target.closest('.node'),pipe=target.closest('.pipe');return group?{id:group.dataset.id,kind:'node'}:(pipe?{id:pipe.dataset.pipe,kind:'pipe'}:null);}
+  document.addEventListener('pointerdown',event=>{
+    if(event.button!==0||!diagram.contains(event.target))return;
+    if(state.tool==='place'&&state.pendingType==='straightLine'){
+      event.preventDefault();event.stopPropagation();event.stopImmediatePropagation();hotSnap=null;interaction={kind:'line',pointerId:event.pointerId,start:rawPoint(event),last:rawPoint(event)};diagram.setPointerCapture?.(event.pointerId);drawOverlay({cursor:interaction.start,label:'Start point'});return;
+    }
+    if(state.tool!=='select')return;
+    const hit=objectFromEvent(event),multi=event.ctrlKey||event.metaKey||event.shiftKey;
+    event.preventDefault();event.stopPropagation();event.stopImmediatePropagation();
+    if(hit){const current=selectedIds();let next=current;if(multi){next=current.includes(hit.id)?current.filter(id=>id!==hit.id):[...current,hit.id];setSelection(next,next.includes(hit.id)?hit.id:next.at(-1));render();if(!next.includes(hit.id))return;}else if(!current.includes(hit.id)){setSelection([hit.id],hit.id);render();}else setSelection(current,hit.id);render();startMove(event,hit.id);diagram.setPointerCapture?.(event.pointerId);return;}
+    if(!multi)setSelection([],null);startMarquee(event);diagram.setPointerCapture?.(event.pointerId);
+  },true);
+  document.addEventListener('pointermove',event=>{
+    if(!interaction||event.pointerId!==interaction.pointerId)return;
+    event.preventDefault();event.stopPropagation();event.stopImmediatePropagation();
+    if(interaction.kind==='move')drawMove(event);
+    else if(interaction.kind==='line')drawLine(event);
+    else if(interaction.kind==='marquee'){const p=rawPoint(event);interaction.last=p;interaction.moved=interaction.moved||Math.hypot(p.x-interaction.start.x,p.y-interaction.start.y)>4;drawOverlay({box:{x1:interaction.start.x,y1:interaction.start.y,x2:p.x,y2:p.y}});}
+  },true);
+  document.addEventListener('pointerup',event=>{
+    if(!interaction||event.pointerId!==interaction.pointerId)return;
+    event.preventDefault();event.stopPropagation();event.stopImmediatePropagation();
+    const finished=interaction;interaction=null;hotSnap=null;
+    if(finished.kind==='line')finishLine();
+    else if(finished.kind==='marquee'){if(finished.moved)selectFromMarquee({x1:finished.start.x,y1:finished.start.y,x2:finished.last.x,y2:finished.last.y},finished.base);render();}
+    else if(finished.kind==='move'){render();$('mode').textContent=selectedIds().length>1?selectedIds().length+' objects selected — drag to move together.':'Object moved. Select grips to review snap points.';}
+    ignoreClickUntil=performance.now()+180;
+  },true);
+  document.addEventListener('pointercancel',event=>{if(!interaction||event.pointerId!==interaction.pointerId)return;interaction=null;hotSnap=null;drawOverlay();},true);
+  document.addEventListener('click',event=>{
+    if(!diagram.contains(event.target))return;
+    if(performance.now()<ignoreClickUntil){event.preventDefault();event.stopPropagation();event.stopImmediatePropagation();return;}
+    if(state.tool==='place'&&state.pendingType&&state.pendingType!=='straightLine'){
+      event.preventDefault();event.stopPropagation();event.stopImmediatePropagation();const raw=rawPoint(event),snap=nearestSnap(raw),at=snap?{x:snap.x,y:snap.y}:raw,d=definition(state.pendingType),id='n'+state.next++;hotSnap=null;state.nodes.push({id,type:state.pendingType,x:Math.round(at.x*10)/10,y:Math.round(at.y*10)/10,rotation:0,tag:nextTag(state.pendingType),label:d.label});state.pendingType=null;state.tool='select';setSelection([id],id);$('mode').textContent=(snap?'Placed at '+snap.label+'. ':'')+'Select and move elements.';render();}
+  },true);
+  window.addEventListener('keydown',event=>{
+    const input=event.target?.closest?.('input,textarea,select,[contenteditable="true"]');if(input)return;
+    if(event.key==='F3'){event.preventDefault();aids.objectSnap=!aids.objectSnap;localStorage.setItem('pidCadDraftingAids',JSON.stringify(aids));panelInputs();updateDraftStatus();drawOverlay();return;}
+    if(event.key==='F8'){event.preventDefault();aids.tracking=true;aids.trackingMode='ortho';localStorage.setItem('pidCadDraftingAids',JSON.stringify(aids));panelInputs();updateDraftStatus();return;}
+    if(event.key==='F10'){event.preventDefault();aids.tracking=true;aids.trackingMode='polar';localStorage.setItem('pidCadDraftingAids',JSON.stringify(aids));panelInputs();updateDraftStatus();return;}
+    if(event.key==='Escape'&&interaction){event.preventDefault();interaction=null;hotSnap=null;drawOverlay();return;}
+    if(!['Delete','Backspace'].includes(event.key)||!selectedIds().length)return;
+    event.preventDefault();event.stopPropagation();deleteCadSelection();
+  },true);
+  render();
+  };
+  if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',()=>setTimeout(boot,0),{once:true});else setTimeout(boot,0);
+})();
+</script>
 <style id="pidDockLayoutRefinement">
   body.pid-palette-mode.pid-props-off main{grid-template-columns:minmax(0,1fr)!important}
   body.pid-palette-mode.pid-props-off main>.canvas-wrap{grid-column:1!important;width:100%!important;max-width:none!important;min-width:0!important}
